@@ -1,0 +1,189 @@
+/* File: frontend/app/globals.css */
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  --color-white: #f7efe8;
+  --color-black: #100d16;
+  --background: #110f18;
+  --background-soft: #191621;
+  --foreground: #f7efe8;
+  --muted: #cbbdc2;
+  --surface: rgba(22, 19, 30, 0.82);
+  --surface-strong: rgba(29, 24, 40, 0.96);
+  --surface-soft: rgba(255, 255, 255, 0.05);
+  --border: rgba(255, 255, 255, 0.1);
+  --accent: #ff8e72;
+  --accent-soft: #ffbe7a;
+  --accent-cool: #82cadc;
+  --success: #9bd59a;
+  --danger: #ff8b94;
+  --shadow: 0 28px 85px rgba(0, 0, 0, 0.38);
+  --grid-line: rgba(255, 255, 255, 0.018);
+  --selection: rgba(255, 190, 122, 0.28);
+  --scrollbar: rgba(255, 255, 255, 0.2);
+  --page-top: rgba(255, 158, 122, 0.22);
+  --page-right: rgba(123, 198, 217, 0.16);
+  --page-body-left: rgba(255, 139, 116, 0.08);
+  --page-body-right: rgba(130, 202, 220, 0.07);
+  --eyebrow-text: #ffd39f;
+  --field-surface: rgba(0, 0, 0, 0.18);
+  --field-placeholder: rgba(247, 239, 232, 0.38);
+}
+
+html[data-theme='light'] {
+  color-scheme: light;
+  --color-white: #281b22;
+  --color-black: #fff9f3;
+  --background: #f7efe7;
+  --background-soft: #fff8f1;
+  --foreground: #281b22;
+  --muted: #6b5861;
+  --surface: rgba(255, 250, 244, 0.84);
+  --surface-strong: rgba(255, 247, 239, 0.94);
+  --surface-soft: rgba(40, 27, 34, 0.05);
+  --border: rgba(40, 27, 34, 0.12);
+  --accent: #ef8465;
+  --accent-soft: #f2bf83;
+  --accent-cool: #4d97aa;
+  --success: #4f8757;
+  --danger: #bf5a66;
+  --shadow: 0 28px 85px rgba(111, 77, 88, 0.14);
+  --grid-line: rgba(61, 44, 52, 0.07);
+  --selection: rgba(239, 132, 101, 0.18);
+  --scrollbar: rgba(74, 52, 61, 0.24);
+  --page-top: rgba(239, 132, 101, 0.2);
+  --page-right: rgba(77, 151, 170, 0.14);
+  --page-body-left: rgba(239, 132, 101, 0.1);
+  --page-body-right: rgba(77, 151, 170, 0.08);
+  --eyebrow-text: #9b5718;
+  --field-surface: rgba(40, 27, 34, 0.06);
+  --field-placeholder: rgba(107, 88, 97, 0.78);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-heading: var(--font-heading);
+}
+
+html {
+  scroll-behavior: smooth;
+  background:
+    radial-gradient(circle at top left, var(--page-top), transparent 32%),
+    radial-gradient(circle at 80% 20%, var(--page-right), transparent 24%),
+    linear-gradient(145deg, #100d16 0%, #14101d 46%, #1b1525 100%);
+}
+
+html[data-theme='light'] {
+  background:
+    radial-gradient(circle at top left, var(--page-top), transparent 30%),
+    radial-gradient(circle at 82% 18%, var(--page-right), transparent 24%),
+    linear-gradient(145deg, #f9f2ea 0%, #f7efe7 46%, #fff8f1 100%);
+}
+
+body {
+  min-height: 100vh;
+  color: var(--foreground);
+  font-family: var(--font-sans), sans-serif;
+  overflow-x: hidden;
+  background:
+    radial-gradient(circle at 15% 10%, var(--page-body-left), transparent 18rem),
+    radial-gradient(circle at 85% 15%, var(--page-body-right), transparent 16rem),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 18rem);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 120px 120px;
+  mask-image: radial-gradient(circle at center, black, transparent 78%);
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+::selection {
+  background: var(--selection);
+  color: var(--foreground);
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
+
+.themed-control {
+  border-color: var(--border);
+  background: var(--field-surface);
+  color: var(--foreground);
+}
+
+.themed-control::placeholder {
+  color: var(--field-placeholder);
+  opacity: 1;
+}
+
+.themed-control:focus {
+  border-color: var(--accent-soft);
+}
+
+.themed-select option {
+  background: var(--background-soft);
+  color: var(--foreground);
+}
+
+.ambient-orb {
+  animation: float-orb 14s ease-in-out infinite;
+}
+
+.ambient-orb-delayed {
+  animation: float-orb 18s ease-in-out infinite reverse;
+}
+
+.message-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar) transparent;
+}
+
+.message-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.message-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.message-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--scrollbar);
+}
+
+@keyframes float-orb {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  50% {
+    transform: translate3d(0, -18px, 0) scale(1.05);
+  }
+}
+
+@keyframes page-enter {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
