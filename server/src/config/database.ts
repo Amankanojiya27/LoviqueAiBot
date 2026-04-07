@@ -1,11 +1,12 @@
+// File: server/src/config/database.ts
 import mongoose from 'mongoose';
+import { env } from './env';
 
 export const connectDB = async (): Promise<void> => {
-  try {
-    const conn = await mongoose.connect(process.env.MONGODB_URI || '');
-    console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
-  } catch (error) {
-    console.error(`❌ Error: ${error}`);
-    process.exit(1);
+  if (!env.mongodbUri) {
+    throw new Error('MONGODB_URI is not configured.');
   }
+
+  const connection = await mongoose.connect(env.mongodbUri);
+  console.log(`MongoDB connected: ${connection.connection.host}`);
 };
