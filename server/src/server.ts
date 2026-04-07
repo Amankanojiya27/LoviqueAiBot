@@ -1,20 +1,23 @@
-import dotenv from 'dotenv';
+// File: server/src/server.ts
 import app from './app';
 import { connectDB } from './config/database';
-
-dotenv.config();
-
-const PORT = process.env.PORT || 8002;
+import { env } from './config/env';
+import dns from 'node:dns/promises';
 
 const startServer = async () => {
+
+  if (process.env.NODE_ENV === "development") {
+    dns.setServers(["8.8.8.8", "8.8.4.4"]);
+  }
   try {
-    await connectDB(); // Connect to MongoDB
-    app.listen(PORT, () => {
-      console.log(`✅ Server is running at http://localhost:${PORT}`);
+    await connectDB();
+    app.listen(env.port, () => {
+      console.log(`Server is running at http://localhost:${env.port}`);
     });
   } catch (error) {
-    console.error("Failed to start server:", error);
+    console.error('Failed to start server:', error);
+    process.exit(1);
   }
 };
 
-startServer();
+void startServer();
