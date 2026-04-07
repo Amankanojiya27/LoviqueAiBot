@@ -1,6 +1,7 @@
 // File: server/src/app.ts
 import cors, { CorsOptions } from 'cors';
 import express from 'express';
+import morgan from 'morgan';
 import { env } from './config/env';
 import { errorHandler } from './middleware/error.middleware';
 import { notFoundHandler } from './middleware/notFound.middleware';
@@ -9,6 +10,19 @@ import chatRoutes from './modules/chat/chat.routes';
 
 const app = express();
 const allowedOrigins = new Set(env.clientOrigins);
+morgan.token('origin', (req) => {
+  const origin = req.headers.origin;
+
+  if (Array.isArray(origin)) {
+    return origin[0] ?? '-';
+  }
+
+  return origin ?? '-';
+});
+const requestLogFormat =
+  env.nodeEnv === 'production'
+    ? ':method :url :status :response-time ms origin=:origin ip=:remote-addr'
+    : 'dev';
 
 const corsOptions: CorsOptions = {
   origin(origin, callback) {
@@ -23,6 +37,11 @@ const corsOptions: CorsOptions = {
 };
 
 app.use(cors(corsOptions));
+app.use(
+  morgan(requestLogFormat, {
+    skip: (req) => req.path === '/api/health' || req.path === '/api/v1/health',
+  }),
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
