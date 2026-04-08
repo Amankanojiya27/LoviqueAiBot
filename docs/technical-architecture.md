@@ -1,82 +1,154 @@
 <!-- File: docs/technical-architecture.md -->
 # Technical Architecture
 
-## System overview
+## Purpose of this document
 
-Lovique is a full-stack web product with a Next.js frontend and an Express + MongoDB backend.
+This document explains how Lovique works end to end.
 
-At a high level:
+It is written for:
 
-```text
-Browser
-  -> Next.js frontend (UI, routing, proxy, reset email route)
-  -> Express API (auth, chat, sessions, memory)
-  -> MongoDB (users, sessions, chat sessions)
-  -> Gemini API (chat generation)
+- developers onboarding to the codebase
+- reviewers trying to understand system decisions
+- technical stakeholders who want to understand the architecture without reading every file first
+
+This is the best place to understand the big picture before going deeper into the [module reference](./module-reference.md) or [workflow diagrams](./workflows-and-sequences.md).
+
+## Executive summary
+
+Lovique is a full-stack AI companion product built as two cooperating applications:
+
+- a Next.js frontend responsible for UI, navigation, local interaction state, a same-origin API proxy, and password reset email delivery
+- an Express + MongoDB backend responsible for authentication, session cookies, chat sessions, memory persistence, and Gemini-generated replies
+
+The product is designed around a few important architectural ideas:
+
+1. Browser requests should feel same-origin even when the API is hosted elsewhere.
+2. Authentication should use durable HTTP-only sessions instead of storing auth tokens in browser JavaScript.
+3. Chat should feel continuous, but token usage should stay controlled.
+4. Operational failures should surface as friendly product messages rather than raw infrastructure errors.
+5. Backend code should be organized by feature module instead of by technical layer only.
+
+## System context
+
+```mermaid
+flowchart LR
+  User[User in browser] --> NextUI[Next.js frontend UI]
+  NextUI --> Proxy[/Next.js API proxy<br/>/api/proxy/[...path]/]
+  Proxy --> ExpressAPI[Express API]
+  ExpressAPI --> Mongo[(MongoDB)]
+  ExpressAPI --> Gemini[Google Gemini API]
+  ExpressAPI --> EmailBridge[/Next.js reset email route<br/>/api/email/reset-password/]
+  EmailBridge --> SMTP[SMTP provider]
 ```
 
-## Main applications
+## Runtime topology
 
-### Frontend
+| Layer | Technology | Primary responsibility |
+| --- | --- | --- |
+| Presentation | Next.js 16 + React 19 | Pages, app shell, auth screens, dashboard, settings, public pages |
+| Client state | Zustand | Session state, chat state, toast state |
+| Browser-to-server integration | Next.js API route proxy | Same-origin request surface for the browser |
+| Application API | Express 5 + TypeScript | Auth, chat, memory, validation, session enforcement |
+| Persistence | MongoDB + Mongoose | Users, sessions, chat sessions |
+| AI provider | Google Gemini API | Reply generation |
+| Email delivery | Nodemailer in Next.js route | Password reset email sending |
 
-Location: [frontend](../frontend)
+## High-level repository structure
 
-Primary responsibilities:
+```text
+LoviqueAiBot/
+|- docs/
+|- frontend/
+|  |- app/
+|  |- components/
+|  |- stores/
+|  `- lib/
+`- server/
+   |- src/config/
+   |- src/constants/
+   |- src/middleware/
+   |- src/modules/auth/
+   |- src/modules/chat/
+   |- src/types/
+   `- src/utils/
+```
 
-- landing page and public pages
-- auth screens
-- dashboard and settings UI
-- theme switching
-- Zustand state management
-- same-origin API proxy for backend requests
-- reset email API route using SMTP
-- toast notifications and friendly request states
+## Core design decisions
 
-Important frontend pieces:
+### 1. Same-origin browser API access through Next.js proxy
 
-- `frontend/app` route structure
-- `frontend/components` UI shell and page components
-- `frontend/stores/auth-store.ts` auth state and actions
-- `frontend/stores/chat-store.ts` chat state and actions
-- `frontend/lib/api.ts` client API wrapper
-- `frontend/app/api/proxy/[...path]/route.ts` backend proxy
-- `frontend/app/api/email/reset-password/route.ts` reset email sender
+The browser does not call the Express backend directly. It calls `frontend/app/api/proxy/[...path]/route.ts`, and that route forwards requests to the backend.
 
-### Backend
+Why this was chosen:
 
-Location: [server](../server)
+- it reduces cross-site cookie problems between frontend and backend hosts
+- it lets the browser keep talking to the same origin as the frontend app
+- it simplifies deployed auth behavior compared with direct browser-to-Render cookie handling
 
-Primary responsibilities:
+Tradeoff:
 
-- user registration and login
-- cookie-based session management
-- password reset token generation
-- chat session storage
-- persistent memory storage
-- Gemini prompt construction and reply generation
-- request validation and protected routes
+- the proxy becomes part of the request path and must be configured correctly in production
+- current implementation is path-based and intentionally simple
 
-Important backend pieces:
+### 2. Cookie-based sessions instead of browser-managed bearer tokens
 
-- `server/src/app.ts` app bootstrap and route mounting
-- `server/src/modules/auth` auth module
-- `server/src/modules/chat` chat module
-- `server/src/config/env.ts` environment parsing
-- `server/src/middleware` auth, error, and not-found handling
+Lovique uses a database-backed session model rather than JWTs stored in local storage.
 
-## Architectural approach
+Why this was chosen:
 
-The codebase uses a modular backend and a route-based frontend.
+- HTTP-only cookies reduce accidental exposure to client-side JavaScript
+- sessions can be invalidated server-side
+- password resets and password changes can revoke sessions cleanly
 
-Key design choices:
+Tradeoff:
 
-- backend business logic is grouped by feature module instead of one large file
-- frontend uses a shared app shell for navigation and protected-area UX
-- browser requests go through a Next.js same-origin proxy to reduce cross-site cookie issues
-- the backend stores durable state in MongoDB
-- Gemini receives only trimmed recent context plus compact memory, not the full history
+- deployment and proxy configuration need to preserve `Set-Cookie` and credentials correctly
 
-## Frontend route map
+### 3. Feature-module backend structure
+
+The backend is grouped around business domains:
+
+- `auth`
+- `chat`
+
+Why this was chosen:
+
+- it keeps related controller, validation, model, and service logic together
+- it scales better than a single-file backend
+- it makes it easier to reason about end-to-end features
+
+### 4. Lightweight persistent memory instead of full conversation replay
+
+Lovique stores lightweight user memory facts and only sends a trimmed recent conversation plus a compact memory block to Gemini.
+
+Why this was chosen:
+
+- better token efficiency
+- lower prompt size
+- more predictable AI context
+
+Tradeoff:
+
+- memory is heuristic and intentionally incomplete
+- the system will not remember every past detail verbatim forever
+
+### 5. Friendly failure translation
+
+Provider and infrastructure failures are mapped into product-safe language.
+
+Why this was chosen:
+
+- better UX
+- less exposure of provider internals
+- clearer behavior when the backend is waking from sleep
+
+Tradeoff:
+
+- deep debugging still requires logs and code understanding, not just the UI message
+
+## Frontend architecture
+
+### Route structure
 
 Public routes:
 
@@ -87,262 +159,512 @@ Public routes:
 - `/privacy`
 - `/terms`
 
-Protected product routes:
+Protected app routes:
 
 - `/dashboard`
 - `/settings`
 
-Internal routes:
+Internal API routes:
 
 - `/api/proxy/[...path]`
 - `/api/email/reset-password`
 
-## Backend route map
+### Layout and shell strategy
 
-Base API:
+The root layout is in `frontend/app/layout.tsx`.
 
-- `/api/v1`
+Important responsibilities:
 
-Health:
+- global fonts
+- theme initialization script
+- metadata and app icons
+- wrapping the app in `RouteShell`
+
+`RouteShell` decides whether the current route should live inside the persistent authenticated shell.
+
+Current behavior:
+
+- `/dashboard` and `/settings` render inside `AppShell`
+- other pages render directly with a page animation wrapper
+- `ToastViewport` is mounted globally
+
+Why this matters:
+
+- protected routes keep their shared shell mounted
+- moving between dashboard and settings feels closer to an SPA
+- top-level layout flicker is reduced
+
+### App shell
+
+`frontend/components/app-shell.tsx` is the main authenticated application frame.
+
+It is responsible for:
+
+- initial session boot
+- protected route gating
+- service wake-up UX
+- mobile sidebar and desktop sidebar
+- recent conversation list
+- rename/delete interaction state
+- top-level logout handling
+- persistent footer and theme toggle
+
+This component is effectively the frontend control center for the private area of the app.
+
+### State management
+
+The frontend uses Zustand stores instead of scattering API calls inside each component.
+
+#### `auth-store`
+
+Responsibilities:
+
+- current user
+- session booting state
+- register/login/logout
+- forgot/reset password
+- password change
+- preference updates
+- local reset preview state
+
+#### `chat-store`
+
+Responsibilities:
+
+- active session ID
+- chat messages
+- remembered notes
+- recent session list
+- optimistic chat sending
+- rename/delete session actions
+- memory clearing
+- fresh chat reset
+
+#### `toast-store`
+
+Responsibilities:
+
+- add transient success/info/error notifications
+- deduplicate repeated toasts
+- auto-dismiss after timeout
+
+### Client API wrapper
+
+`frontend/lib/api.ts` is the browser-facing transport layer.
+
+Important behaviors:
+
+- all requests go to `/api/proxy`
+- credentials are included on every request
+- requests use a timeout
+- a wake-up probe can hit `/health`
+- selected errors are retried once after wake-up
+- generic server errors are translated into friendlier messages
+
+This file is the main frontend boundary between UI/state code and backend integration.
+
+### Internal frontend API routes
+
+#### Proxy route
+
+`frontend/app/api/proxy/[...path]/route.ts`
+
+Responsibilities:
+
+- build the target backend URL from env
+- forward method, headers, body, and cookie
+- forward `Set-Cookie` back to the browser
+
+Notable constraints:
+
+- it currently supports `GET`, `POST`, `PATCH`, and `DELETE`
+- it is built around path forwarding
+- the implementation is intentionally minimal
+
+#### Reset email route
+
+`frontend/app/api/email/reset-password/route.ts`
+
+Responsibilities:
+
+- verify a shared secret from the backend
+- validate SMTP configuration
+- send password reset email via Nodemailer
+- return safe JSON responses
+
+Why this route exists:
+
+- SMTP credentials live on the frontend deployment
+- the Express backend only needs to create tokens and ask for email delivery
+
+## Backend architecture
+
+### Application bootstrap
+
+`server/src/server.ts` is the entry point.
+
+Key behavior:
+
+- reads the app from `app.ts`
+- connects to MongoDB before listening
+- sets a Google DNS server override in development mode
+- exits the process if startup fails
+
+`server/src/app.ts` creates the Express app and wires middleware and routes.
+
+Pipeline order:
+
+1. CORS
+2. Morgan request logging
+3. JSON parsing
+4. URL-encoded parsing
+5. health endpoints
+6. auth routes
+7. chat routes
+8. not-found middleware
+9. error middleware
+
+### Configuration layer
+
+`server/src/config/env.ts` parses and normalizes environment variables.
+
+Important behavior:
+
+- trims empty strings to fall back to defaults
+- parses numbers safely
+- parses comma-separated client origins
+- exports `isProduction` for cookie behavior and other environment-sensitive logic
+
+`server/src/config/database.ts` is intentionally small:
+
+- validate `MONGODB_URI`
+- connect with Mongoose
+- log the connected host
+
+### Auth module
+
+Location: `server/src/modules/auth`
+
+Responsibilities:
+
+- registration
+- login
+- logout
+- current user lookup
+- forgot password
+- reset password
+- change password
+- update preferences
+- load and clear remembered notes
+- create and validate session context
+
+The auth module is split into:
+
+- `auth.routes.ts`
+- `auth.controller.ts`
+- `auth.service.ts`
+- `auth.validation.ts`
+- `auth.types.ts`
+- `user.model.ts`
+- `session.model.ts`
+- `profile.constants.ts`
+- `user.memory.ts`
+
+#### Auth controller/service split
+
+Controllers are intentionally thin:
+
+- validate request payloads
+- pull auth context from `req.auth`
+- call service methods
+- shape HTTP responses
+- manage cookie set/clear
+
+Services contain the real logic:
+
+- password hashing and verification
+- session creation
+- session lookup from cookie token
+- reset token generation and verification
+- profile normalization
+- memory serialization
+
+#### Session model
+
+Sessions are stored in MongoDB rather than memory.
+
+Important details:
+
+- raw session tokens are never stored
+- only a SHA-256 hash is stored
+- expiry is enforced both in queries and with a TTL index
+- `userAgent` and `ipAddress` are recorded for context
+
+#### Password reset design
+
+Important details:
+
+- raw reset token is generated once
+- only its hash is stored
+- reset token has an expiry timestamp
+- reset URL points back to the frontend auth page
+- local preview is allowed only in local development conditions
+- live email sending happens through the frontend bridge
+
+### Chat module
+
+Location: `server/src/modules/chat`
+
+Responsibilities:
+
+- send user message to Gemini
+- persist chat history
+- list sessions
+- load session history
+- rename session
+- delete session
+
+The chat module is split into:
+
+- `chat.routes.ts`
+- `chat.controller.ts`
+- `chat.service.ts`
+- `chat.validation.ts`
+- `chat.types.ts`
+- `chat.model.ts`
+
+#### Prompt-building strategy
+
+The chat service does not send all past messages to Gemini.
+
+It builds the prompt from:
+
+- trimmed recent chat history
+- compact conversation memory summary
+- compact long-term memory block
+- user profile preferences
+- personality baseline
+
+This keeps prompts shorter while preserving recent context and key remembered facts.
+
+#### AI failure mapping
+
+The chat service detects several provider failure modes:
+
+- auth or key problems
+- model not found
+- rate limits
+- provider/network unavailability
+
+Those are translated into `ApiError` responses with safer messages and meaningful status codes.
+
+### Middleware layer
+
+#### `requireAuth`
+
+Responsibilities:
+
+- read session cookie from the request
+- load session context from the backend session store
+- clear the cookie if the session is invalid or expired
+- attach `req.auth`
+
+#### `errorHandler`
+
+Responsibilities:
+
+- serialize `ApiError` cleanly
+- fall back to a safe friendly 500 response for unknown errors
+
+#### `notFoundHandler`
+
+Responsibilities:
+
+- return a JSON 404 response for unknown routes
+
+### Utilities layer
+
+Important shared utilities:
+
+- `apiError.ts` for explicit typed operational errors
+- `asyncHandler.ts` for async Express route safety
+- `cookies.ts` for reading and writing the session cookie
+- `crypto.ts` for secure token generation and password hashing
+- `validate.ts` for string, enum, email, and password validation
+- `types/express.d.ts` for `req.auth` augmentation
+
+## Data model
+
+### User
+
+Stored in `user.model.ts`.
+
+Key fields:
+
+- `name`
+- `email`
+- `companionGender`
+- `companionPersonality`
+- `memoryFacts`
+- `passwordHash`
+- `passwordSalt`
+- `passwordResetTokenHash`
+- `passwordResetExpiresAt`
+- `lastLoginAt`
+- `createdAt`
+- `updatedAt`
+
+Notes:
+
+- `gender` still exists as an optional legacy field for compatibility logic
+- `memoryFacts` is an embedded array of normalized memory items
+
+### Session
+
+Stored in `session.model.ts`.
+
+Key fields:
+
+- `userId`
+- `tokenHash`
+- `expiresAt`
+- `userAgent`
+- `ipAddress`
+- timestamps
+
+Notes:
+
+- `expiresAt` has a TTL index
+- `tokenHash` is unique
+
+### ChatSession
+
+Stored in `chat.model.ts`.
+
+Key fields:
+
+- `userId`
+- `sessionId`
+- `title`
+- `history`
+- timestamps
+
+Notes:
+
+- `(userId, sessionId)` is unique
+- `history` stores both user and model messages
+
+## Security model
+
+### Authentication
+
+- HTTP-only session cookie named `lovique_session`
+- cookie settings vary by production/development
+- production uses `SameSite=None` and `Secure`
+- session store is server-side and revocable
+
+### Password handling
+
+- passwords are hashed with `scrypt`
+- password comparisons use `timingSafeEqual`
+- reset tokens are hashed before storage
+
+### Request protection
+
+- protected routes use `requireAuth`
+- allowed browser origins are enforced with CORS on the backend
+- frontend proxy reduces cross-site browser auth complexity
+
+### Operational secrets
+
+Important secrets include:
+
+- `GEMINI_API_KEY`
+- `PASSWORD_RESET_EMAIL_SECRET`
+- `SMTP_PASS`
+- database credentials inside `MONGODB_URI`
+
+## Performance and token-usage controls
+
+The chat service uses explicit limits to keep requests bounded.
+
+Important limits in current code:
+
+- max stored messages per session: `20`
+- max prompt messages sent to Gemini: `8`
+- max prompt chars: `3600`
+- max chars per history message in prompt: `420`
+- max memory entries sampled for older context: `6`
+- max memory chars in prompt block: `900`
+- max output tokens: `420`
+
+Why this matters:
+
+- lower AI cost
+- faster responses
+- smaller risk of oversized prompts
+- more predictable behavior across long chats
+
+## Observability and operations
+
+### Logging
+
+Morgan is enabled in both development and production.
+
+Production logs include:
+
+- HTTP method
+- URL
+- status
+- response time
+- `origin` header
+- remote address
+
+Health endpoints are skipped from request logging so the logs stay focused on real user traffic.
+
+### Health endpoints
+
+Available endpoints:
 
 - `GET /`
 - `GET /api/health`
 - `GET /api/v1/health`
 
-Auth:
+Purpose:
 
-- `POST /api/v1/auth/register`
-- `POST /api/v1/auth/login`
-- `POST /api/v1/auth/logout`
-- `GET /api/v1/auth/me`
-- `POST /api/v1/auth/forgot-password`
-- `POST /api/v1/auth/reset-password`
-- `POST /api/v1/auth/change-password`
-- `PATCH /api/v1/auth/preferences`
-- `GET /api/v1/auth/memories`
-- `DELETE /api/v1/auth/memories`
+- platform wake-up probes
+- uptime checks
+- frontend retry/wake flow
 
-Chat:
+### Environment-sensitive behavior
 
-- `POST /api/v1/chat/messages`
-- `GET /api/v1/chat/sessions`
-- `GET /api/v1/chat/sessions/:sessionId`
-- `PATCH /api/v1/chat/sessions/:sessionId`
-- `DELETE /api/v1/chat/sessions/:sessionId`
+Some behavior changes depending on environment:
 
-## Core flows
+- session cookie `SameSite` and `Secure`
+- local password reset preview
+- local development DNS override in `server.ts`
+- deployed origins accepted by CORS
 
-### 1. Authentication and session flow
+## Implementation notes that are easy to miss
 
-1. The user logs in or registers from the frontend.
-2. The browser sends the request to the Next.js proxy.
-3. The proxy forwards it to the Express backend.
-4. The backend validates input, creates or verifies the user, and creates a session record in MongoDB.
-5. The backend sets the `lovique_session` HTTP-only cookie.
-6. The proxy forwards the `Set-Cookie` header back to the browser.
-7. Future protected requests reuse that cookie through the same-origin frontend route.
-
-Why this matters:
-
-- it avoids many third-party cookie problems between Vercel and Render
-- it keeps the browser talking to the frontend origin
-- it allows the backend to stay session-cookie based
-
-### 2. Password reset flow
-
-1. The user submits an email address on the forgot-password screen.
-2. The backend generates a reset token, stores only its hash, and builds a reset URL pointing back to the frontend auth page.
-3. In local development, the backend may expose a preview instead of sending email.
-4. In live mode, the backend calls the Next.js reset email route.
-5. The Next.js route sends the email using SMTP through Nodemailer.
-6. The user opens the reset link and submits a new password.
-7. The backend verifies the token hash and expiry, updates the password, and invalidates existing sessions.
-
-Why this split exists:
-
-- it keeps SMTP credentials out of the Express deployment
-- it works around hosting constraints where frontend env handling is easier than backend email setup
-
-### 3. Chat session flow
-
-1. The user opens an existing session or starts a new one.
-2. The frontend sends the user message and session ID to the backend.
-3. The backend loads the chat session and recent history from MongoDB.
-4. The backend builds a trimmed prompt history and memory block.
-5. Gemini generates the reply.
-6. The backend stores both the user message and model reply back into the chat session.
-7. The frontend updates the visible conversation and recent-session list.
-
-Notes:
-
-- only a limited recent slice of messages is sent to Gemini
-- the stored conversation history is also capped
-- session titles are auto-generated from the first user message when needed
-
-### 4. Persistent memory flow
-
-Persistent memory is intentionally lightweight.
-
-1. The backend checks each user message for memory-like patterns.
-2. Facts such as favorites, names, preferences, location, work, study, or explicit "remember" notes are normalized.
-3. The best recent memory items are stored on the user document.
-4. A compact memory block is inserted into the Gemini system instruction when relevant.
-5. The frontend can display or clear remembered notes from settings.
-
-This design trades completeness for lower token usage and predictable behavior.
-
-## Data model summary
-
-### User
-
-Stores:
-
-- name
-- email
-- password hash and salt
-- companion gender
-- companion personality
-- password reset token hash and expiry
-- remembered memory facts
-- timestamps
-
-### Session
-
-Stores:
-
-- user ID
-- hashed session token
-- expiry time
-- user agent
-- IP address
-
-### ChatSession
-
-Stores:
-
-- user ID
-- session ID
-- optional title
-- history of user/model messages
-- timestamps
-
-## State management on the frontend
-
-The frontend uses Zustand rather than scattering request logic in components.
-
-Main stores:
-
-- `auth-store`
-  session user, auth actions, preferences, password actions
-- `chat-store`
-  session list, active chat, history, remembered notes, send-message flow
-- `toast-store`
-  transient success and error notifications
-
-Benefits:
-
-- simpler component tree
-- fewer duplicated loading/error states
-- easier protected-route UX
-
-## Request handling strategy
-
-The frontend API client has a few important behaviors:
-
-- all browser calls go to `/api/proxy`
-- requests include credentials
-- requests use a timeout
-- wake-up retries happen for sleepy infrastructure statuses
-- raw technical errors are translated into friendlier product language
-
-This is especially useful on hosts where the backend may sleep between requests.
-
-## Error handling strategy
-
-The backend does not pass provider-specific Gemini errors straight through to the UI.
-
-Instead it maps them into product-safe categories such as:
-
-- model unavailable
-- auth/configuration unavailable
-- rate limited
-- temporarily unavailable
-
-The frontend then shows:
-
-- inline errors
-- loading or wake-up states
-- toast notifications
-
-The goal is to keep failures understandable without leaking implementation details.
-
-## Security and privacy notes
-
-Current protections include:
-
-- HTTP-only session cookie
-- password hashing with salt
-- reset token hashing instead of storing raw tokens
-- server-side auth checks for protected routes
-- CORS allowlist on the backend
-- same-origin frontend proxy for credentialed browser requests
-
-Important product reality:
-
-- chats and remembered notes are stored
-- user content is sent to Gemini for reply generation
-- this behavior needs to stay aligned with the privacy documentation
-
-## Deployment model
-
-Current deployment assumptions:
-
-- frontend on Vercel
-- backend on Render or a similar Node host
-- MongoDB Atlas for database
-- Gemini API for model inference
-
-Important environment relationships:
-
-- frontend needs the backend API base or proxy target
-- backend needs the frontend app URL for reset links
-- backend and frontend share the password-reset bridge secret
-- allowed client origins must include the deployed frontend origin
-
-## Observability and operations
-
-The backend includes:
-
-- health endpoints
-- request logging with Morgan
-- quieter health logging to reduce noise
-
-In production, request logs include:
-
-- method
-- path
-- status
-- response time
-- request origin
-- remote address
+- `server/tsconfig.json` uses `ts-node.files=true` so the Express request augmentation loads correctly in development
+- `server/.npmrc` includes `include=dev` so TypeScript builds on platforms like Render do not miss dev type packages
+- `frontend/app/layout.tsx` uses an inline theme script plus hydration suppression to reduce theme mismatch issues
+- `frontend/app/auth/page.tsx` wraps `AuthShell` in `Suspense` because auth mode comes from search params
+- `frontend/components/dashboard-shell.tsx` uses `useDeferredValue` to keep chat rendering smoother
 
 ## Known limitations and tradeoffs
 
-- memory extraction is heuristic and regex-driven, not semantic retrieval
-- there is no dedicated background job system
-- password reset email currently depends on the frontend runtime being available
-- session auth still depends on correct cookie forwarding through the proxy
-- chat behavior depends on Gemini model availability and quota
+- memory extraction is regex-based, not semantic retrieval
+- the chat model is coupled to Gemini availability and quota
+- the proxy is intentionally simple and only implements the methods currently needed
+- password reset email delivery depends on the frontend runtime and SMTP config being healthy
+- there is no background job queue for email or cleanup work
+- the frontend proxy is path-oriented and should be treated carefully if the API grows more query-heavy
+- there is no dedicated CSRF token layer today; if the product grows beyond the current same-origin proxy pattern, this should be revisited
 
-## Change-sensitive areas
+## Where to go next
 
-These are the parts most likely to cause regressions:
-
-- cookie/session behavior between frontend proxy and backend
-- CORS and environment configuration
-- auth route payload validation
-- Gemini model configuration
-- memory extraction and memory prompt limits
-- password reset bridge secret and URL alignment
-
-When changing any of those, the docs and deployment env notes should be reviewed as part of the same work.
+- For file-by-file responsibility and exported functions, read the [module reference](./module-reference.md).
+- For request-by-request behavior, read [workflows and sequence diagrams](./workflows-and-sequences.md).
+- For deployment and troubleshooting, read [setup, deployment, and operations](./setup-deployment-operations.md) and [troubleshooting and failure modes](./troubleshooting-and-failure-modes.md).
