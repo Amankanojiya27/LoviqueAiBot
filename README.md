@@ -25,6 +25,12 @@ Detailed setup lives here:
 - [Frontend README](./frontend/README.md)
 - [Server README](./server/README.md)
 
+Product and architecture documentation lives here:
+
+- [Documentation Hub](./docs/README.md)
+- [Product Overview](./docs/product-overview.md)
+- [Technical Architecture](./docs/technical-architecture.md)
+
 ## Product overview
 
 Lovique is designed to feel like a real product rather than a demo app. Users can sign up, choose the kind of companion they want, chat in a private workspace, return to saved sessions later, and update their preferences from a dedicated settings area.
