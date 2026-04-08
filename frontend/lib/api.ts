@@ -19,7 +19,7 @@ type ApiResponse<T> = {
   details?: unknown;
 };
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8002/api/v1';
+const API_BASE_URL = '/api/proxy';
 const REQUEST_TIMEOUT_MS = 12000;
 const WAKE_TIMEOUT_MS = 25000;
 const SERVICE_WAKE_MESSAGE =
