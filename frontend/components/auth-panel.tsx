@@ -1,5 +1,6 @@
 // File: frontend/components/auth-panel.tsx
 import Link from 'next/link';
+import { useState } from 'react';
 import {
   getCompanionLabel,
   getPersonalityDescription,
@@ -363,15 +364,37 @@ function Field({
   onChange: (value: string) => void;
   type?: React.HTMLInputTypeAttribute;
 }) {
+  const [showPassword, setShowPassword] = useState(false);
+  const supportsReveal = type === 'password';
+  const resolvedType = supportsReveal && showPassword ? 'text' : type;
+
   return (
     <label className="block text-sm text-[var(--muted)]">
-      {label}
+      <div className="flex items-center justify-between gap-3">
+        <span>{label}</span>
+        {supportsReveal ? (
+          <button
+            type="button"
+            onClick={() => setShowPassword((current) => !current)}
+            className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-[var(--muted)] transition hover:text-[var(--foreground)]"
+            aria-label={showPassword ? `Hide ${label}` : `Show ${label}`}
+          >
+            {showPassword ? <EyeOffIcon /> : <EyeIcon />}
+            {showPassword ? 'Hide' : 'Show'}
+          </button>
+        ) : null}
+      </div>
       <input
-        type={type}
+        type={resolvedType}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="themed-control mt-2 w-full rounded-2xl border px-4 py-3 outline-none transition"
       />
+      {supportsReveal && showPassword ? (
+        <p className="mt-2 text-xs leading-6 text-[var(--danger)]">
+          Caution: your password is visible on screen. Use this only on a trusted device.
+        </p>
+      ) : null}
     </label>
   );
 }
@@ -431,5 +454,43 @@ function InfoRow({ label, value }: { label: string; value: string }) {
       <p className="text-[11px] uppercase tracking-[0.22em] text-white/35">{label}</p>
       <p className="mt-1 break-words text-sm text-[var(--foreground)]">{value}</p>
     </div>
+  );
+}
+
+function EyeIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className="h-[14px] w-[14px]"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function EyeOffIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className="h-[14px] w-[14px]"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M3 3l18 18" />
+      <path d="M10.6 10.6A3 3 0 0 0 12 15a3 3 0 0 0 2.4-4.4" />
+      <path d="M9.4 5.5A10.7 10.7 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-4.1 4.8" />
+      <path d="M6.2 6.2A16.1 16.1 0 0 0 2 12s3.5 7 10 7a10 10 0 0 0 4-.8" />
+    </svg>
   );
 }
